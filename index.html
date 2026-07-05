@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Block Runner: Infinite Grid</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --neon-pink: #ff00ff;
+            --neon-blue: #00ffff;
+            --hud-bg: rgba(10, 5, 20, 0.9);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050110;
+            font-family: 'Orbitron', sans-serif;
+            color: #fff;
+        }
+
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            position: absolute;
+            top: 0; left: 0;
+            z-index: 1;
+        }
+
+        .screen-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at center, rgba(15, 5, 30, 0.95) 0%, rgba(5, 0, 15, 1) 100%);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 3rem;
+            letter-spacing: 3px;
+            margin-bottom: 15px;
+            color: var(--neon-blue);
+            text-shadow: 0 0 20px var(--neon-pink);
+        }
+
+        .tagline {
+            font-size: 1rem;
+            color: #b099ff;
+            margin-bottom: 40px;
+            max-width: 500px;
+            line-height: 1.6;
+        }
+
+        .btn-action {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            color: #ffffff;
+            border: 3px solid var(--neon-blue);
+            border-radius: 4px;
+            padding: 16px 40px;
+            cursor: pointer;
+            background-color: rgba(0, 255, 255, 0.15);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
+            transition: all 0.2s ease;
+        }
+
+        .btn-action:hover {
+            background-color: var(--neon-blue);
+            color: #000;
+            box-shadow: 0 0 30px var(--neon-blue);
+        }
+
+        #gameover-overlay { display: none; }
+        #gameover-title { color: #ff0055; text-shadow: 0 0 30px #ff0055; }
+
+        #hud-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        .hud-card {
+            background: var(--hud-bg);
+            border: 2px solid var(--neon-pink);
+            padding: 10px 20px;
+            border-radius: 6px;
+            color: var(--neon-blue);
+            font-weight: bold;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.2);
+        }
+
+        .hud-card span { color: #fff; margin-left: 5px; }
+        
+        .mobile-instructions {
+            position: absolute;
+            bottom: 30px;
+            font-size: 0.8rem;
+            color: #6a569d;
+            letter-spacing: 1px;
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div id="menu-overlay" class="screen-overlay">
+        <h1>BLOCK RUNNER</h1>
+        <p class="tagline">Avoid the crimson sector barriers. Shift coordinates. Speed scales infinitely.</p>
+        <button class="btn-action" id="start-btn">ENGAGE CORE</button>
+        <p class="mobile-instructions">DESKTOP: A/D Keys • MOBILE: Tap Left/Right Screen</p>
+    </div>
+
+    <div id="gameover-overlay" class="screen-overlay">
+        <h1 id="gameover-title">RUN TERMINATED</h1>
+        <p class="tagline" id="summary-metrics">Processing distance calculations...</p>
+        <button class="btn-action" id="retry-btn">REBOOT GRID</button>
+    </div>
+
+    <div id="hud-overlay">
+        <div style="display: flex; justify-content: space-between; width: 100%;">
+            <div class="hud-card">SCORE: <span id="score-idx">0</span></div>
+            <div class="hud-card">SPEED: <span id="speed-idx">1X</span></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let gameActive = false;
+        let score = 0;
+        let speedMultiplier = 1;
+        let gameSpeed = 8;
+        
+        // 3-Lane Track Configuration
+        const LANES = [-1.5, 0, 1.5]; // Left, Middle, Right positions in 3D-space
+        let currentLane = 1; // Start in middle lane
+        let targetX = LANES[currentLane];
+        let playerX = LANES[currentLane]; // Current visual x (interpolates smoothly)
+
+        let obstacles = [];
+        let horizonLines = [];
+        let spawnTimer = 0;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Control Hooks
+        window.addEventListener('keydown', e => {
+            if (!gameActive) return;
+            if (e.key.toLowerCase() === 'a' || e.key === 'ArrowLeft') {
+                if (currentLane > 0) currentLane--;
+            }
+            if (e.key.toLowerCase() === 'd' || e.key === 'ArrowRight') {
+                if (currentLane < 2) currentLane++;
+            }
+            targetX = LANES[currentLane];
+        });
+
+        window.addEventListener('pointerdown', e => {
+            if (!gameActive || e.target.tagName === 'BUTTON') return;
+            // Split touch zones right down the middle
+            if (e.clientX < window.innerWidth / 2) {
+                if (currentLane > 0) currentLane--;
+            } else {
+                if (currentLane < 2) currentLane++;
+            }
+            targetX = LANES[currentLane];
+        });
+
+        document.getElementById('start-btn').addEventListener('click', bootGame);
+        document.getElementById('retry-btn').addEventListener('click', bootGame);
+
+        function bootGame() {
+            document.getElementById('menu-overlay').classList.add('hidden');
+            document.getElementById('gameover-overlay').style.display = 'none';
+            document.getElementById('hud-overlay').style.display = 'flex';
+
+            currentLane = 1;
+            targetX = LANES[currentLane];
+            playerX = LANES[currentLane];
+            obstacles = [];
+            score = 0;
+            gameSpeed = 8;
+            speedMultiplier = 1;
+            spawnTimer = 0;
+            
+            // Generate base perspective horizontal steps
+            horizonLines = [];
+            for (let i = 0; i < 15; i++) {
+                horizonLines.push(i * 40);
+            }
+
+            gameActive = true;
+            updateHUD();
+            requestAnimationFrame(renderLoop);
+        }
+
+        function updateHUD() {
+            document.getElementById('score-idx').textContent = Math.floor(score);
+            document.getElementById('speed-idx').textContent = speedMultiplier.toFixed(1) + "X";
+        }
+
+        // Projection mapping helper converts 3D world space into pseudo-3D pixel space
+        function project3D(worldX, worldZ, blockHeight = 0) {
+            const fov = 350;
+            const cameraHeight = 180;
+            
+            // Push perspective back relative to screen space center coordinates
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height * 0.45; // Horizon height placement
+
+            // Avoid division by zero anomalies
+            if (worldZ <= 0) worldZ = 0.01;
+
+            const scale = fov / worldZ;
+            const screenX = centerX + (worldX * 120) * scale;
+            const screenY = centerY + (cameraHeight - blockHeight) * scale;
+
+            return { x: screenX, y: screenY, size: scale };
+        }
+
+        function renderLoop() {
+            if (!gameActive) return;
+            requestAnimationFrame(renderLoop);
+
+            // Velocity Scalers
+            score += 0.2;
+            gameSpeed += 0.002;
+            speedMultiplier = gameSpeed / 8;
+            if (Math.floor(score) % 50 === 0) updateHUD();
+
+            // Clear Background
+            ctx.fillStyle = '#050112';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Slide player toward targeted lane variable fluidly
+            playerX += (targetX - playerX) * 0.25;
+
+            const horizonY = canvas.height * 0.45;
+
+            // Draw Sky/Horizon Ambient Gradient
+            let skyGlow = ctx.createLinearGradient(0, 0, 0, horizonY);
+            skyGlow.addColorStop(0, '#020005');
+            skyGlow.addColorStop(1, '#1b053a');
+            ctx.fillStyle = skyGlow;
+            ctx.fillRect(0, 0, canvas.width, horizonY);
+
+            // Draw Perspective Grid Lines
+            ctx.strokeStyle = '#32105c';
+            ctx.lineWidth = 2;
+            const trackEdges = [-2.25, -0.75, 0.75, 2.25];
+            
+            trackEdges.forEach(edgeX => {
+                const near = project3D(edgeX - playerX, 30);
+                const far = project3D(edgeX - playerX, 600);
+                ctx.beginPath();
+                ctx.moveTo(near.x, near.y);
+                ctx.lineTo(far.x, far.y);
+                ctx.stroke();
+            });
+
+            // Update & Render Moving Horizontal Grid Stripes
+            ctx.strokeStyle = '#220a42';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < horizonLines.length; i++) {
+                horizonLines[i] -= gameSpeed;
+                if (horizonLines[i] <= 20) {
+                    horizonLines[i] = 600; // Reset back to distance depth limit
+                }
+                const nearLeft = project3D(-2.25 - playerX, horizonLines[i]);
+                const nearRight = project3D(2.25 - playerX, horizonLines[i]);
+                ctx.beginPath();
+                ctx.moveTo(nearLeft.x, nearLeft.y);
+                ctx.lineTo(nearRight.x, nearRight.y);
+                ctx.stroke();
+            }
+
+            // Spawner Logic
+            spawnTimer -= gameSpeed;
+            if (spawnTimer <= 0) {
+                // Pick a lane, randomly place a solid variable block
+                const randomLaneIndex = Math.floor(Math.random() * 3);
+                obstacles.push({
+                    laneX: LANES[randomLaneIndex],
+                    z: 600, // Spawn far away
+                    width: 1.0,
+                    height: 60
+                });
+                spawnTimer = 120 + Math.random() * 100; // Intervals
+            }
+
+            // Draw & Process Obstacle Array
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.z -= gameSpeed;
+
+                // Delete items past the camera view bounds
+                if (obs.z <= 15) {
+                    obstacles.splice(i, 1);
+                    continue;
+                }
+
+                // Map 3D projection layers for boxes
+                let basePoints = project3D(obs.laneX - playerX, obs.z, 0);
+                let topPoints = project3D(obs.laneX - playerX, obs.z, obs.height);
+
+                let boxW = obs.width * 110 * basePoints.size;
+                let boxH = basePoints.y - topPoints.y;
+
+                // Hit Detection Calculations
+                if (obs.z > 20 && obs.z < 45) {
+                    // Check if current active runner lane matches object assignment
+                    if (Math.abs(playerX - obs.laneX) < 0.4) {
+                        endRunSequence();
+                        return;
+                    }
+                }
+
+                // Render Object Profiles with Distance Clipping
+                if (basePoints.y > horizonY) {
+                    ctx.save();
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#ff0055';
+                    ctx.fillStyle = '#ff0055';
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = Math.max(1, basePoints.size * 0.5);
+
+                    // Front Face box plotting
+                    ctx.fillRect(basePoints.x - boxW / 2, topPoints.y, boxW, boxH);
+                    ctx.strokeRect(basePoints.x - boxW / 2, topPoints.y, boxW, boxH);
+                    ctx.restore();
+                }
+            }
+
+            // Render Player Avatar (Faux 3D Vector Triangle at base screen)
+            const pBaseY = canvas.height * 0.88;
+            const pBaseX = canvas.width / 2;
+
+            ctx.save();
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = var(--neon-blue);
+            ctx.fillStyle = var(--neon-blue);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+
+            ctx.beginPath();
+            ctx.moveTo(pBaseX, pBaseY - 25); // Nose Cone Point
+            ctx.lineTo(pBaseX - 20, pBaseY + 20); // Tail Wing Left
+            ctx.lineTo(pBaseX + 20, pBaseY + 20); // Tail Wing Right
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function endRunSequence() {
+            gameActive = false;
+            document.getElementById('hud-overlay').style.display = 'none';
+            document.getElementById('summary-metrics').textContent = `Core overloaded. Final distance evaluation score: ${Math.floor(score)}.`;
+            document.getElementById('gameover-overlay').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>
