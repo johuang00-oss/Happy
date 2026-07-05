@@ -84,6 +84,7 @@
             background-color: rgba(0, 255, 255, 0.15);
             box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
             transition: all 0.2s ease;
+            pointer-events: auto;
         }
 
         .btn-action:hover {
@@ -155,246 +156,84 @@
     </div>
 
     <script>
-        const canvas = document.getElementById('game-canvas');
-        const ctx = canvas.getContext('2d');
+        // Wrap everything in window.onload to ensure Chrome sees the canvas before running scripts
+        window.onload = function() {
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
 
-        let gameActive = false;
-        let score = 0;
-        let speedMultiplier = 1;
-        let gameSpeed = 8;
-        
-        // 3-Lane Track Configuration
-        const LANES = [-1.5, 0, 1.5]; // Left, Middle, Right positions in 3D-space
-        let currentLane = 1; // Start in middle lane
-        let targetX = LANES[currentLane];
-        let playerX = LANES[currentLane]; // Current visual x (interpolates smoothly)
-
-        let obstacles = [];
-        let horizonLines = [];
-        let spawnTimer = 0;
-
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        // Control Hooks
-        window.addEventListener('keydown', e => {
-            if (!gameActive) return;
-            if (e.key.toLowerCase() === 'a' || e.key === 'ArrowLeft') {
-                if (currentLane > 0) currentLane--;
-            }
-            if (e.key.toLowerCase() === 'd' || e.key === 'ArrowRight') {
-                if (currentLane < 2) currentLane++;
-            }
-            targetX = LANES[currentLane];
-        });
-
-        window.addEventListener('pointerdown', e => {
-            if (!gameActive || e.target.tagName === 'BUTTON') return;
-            // Split touch zones right down the middle
-            if (e.clientX < window.innerWidth / 2) {
-                if (currentLane > 0) currentLane--;
-            } else {
-                if (currentLane < 2) currentLane++;
-            }
-            targetX = LANES[currentLane];
-        });
-
-        document.getElementById('start-btn').addEventListener('click', bootGame);
-        document.getElementById('retry-btn').addEventListener('click', bootGame);
-
-        function bootGame() {
-            document.getElementById('menu-overlay').classList.add('hidden');
-            document.getElementById('gameover-overlay').style.display = 'none';
-            document.getElementById('hud-overlay').style.display = 'flex';
-
-            currentLane = 1;
-            targetX = LANES[currentLane];
-            playerX = LANES[currentLane];
-            obstacles = [];
-            score = 0;
-            gameSpeed = 8;
-            speedMultiplier = 1;
-            spawnTimer = 0;
+            let gameActive = false;
+            let score = 0;
+            let speedMultiplier = 1;
+            let gameSpeed = 8;
             
-            // Generate base perspective horizontal steps
-            horizonLines = [];
-            for (let i = 0; i < 15; i++) {
-                horizonLines.push(i * 40);
+            const LANES = [-1.5, 0, 1.5]; 
+            let currentLane = 1; 
+            let targetX = LANES[currentLane];
+            let playerX = LANES[currentLane]; 
+
+            let obstacles = [];
+            let horizonLines = [];
+            let spawnTimer = 0;
+
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
             }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
 
-            gameActive = true;
-            updateHUD();
-            requestAnimationFrame(renderLoop);
-        }
-
-        function updateHUD() {
-            document.getElementById('score-idx').textContent = Math.floor(score);
-            document.getElementById('speed-idx').textContent = speedMultiplier.toFixed(1) + "X";
-        }
-
-        // Projection mapping helper converts 3D world space into pseudo-3D pixel space
-        function project3D(worldX, worldZ, blockHeight = 0) {
-            const fov = 350;
-            const cameraHeight = 180;
-            
-            // Push perspective back relative to screen space center coordinates
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height * 0.45; // Horizon height placement
-
-            // Avoid division by zero anomalies
-            if (worldZ <= 0) worldZ = 0.01;
-
-            const scale = fov / worldZ;
-            const screenX = centerX + (worldX * 120) * scale;
-            const screenY = centerY + (cameraHeight - blockHeight) * scale;
-
-            return { x: screenX, y: screenY, size: scale };
-        }
-
-        function renderLoop() {
-            if (!gameActive) return;
-            requestAnimationFrame(renderLoop);
-
-            // Velocity Scalers
-            score += 0.2;
-            gameSpeed += 0.002;
-            speedMultiplier = gameSpeed / 8;
-            if (Math.floor(score) % 50 === 0) updateHUD();
-
-            // Clear Background
-            ctx.fillStyle = '#050112';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Slide player toward targeted lane variable fluidly
-            playerX += (targetX - playerX) * 0.25;
-
-            const horizonY = canvas.height * 0.45;
-
-            // Draw Sky/Horizon Ambient Gradient
-            let skyGlow = ctx.createLinearGradient(0, 0, 0, horizonY);
-            skyGlow.addColorStop(0, '#020005');
-            skyGlow.addColorStop(1, '#1b053a');
-            ctx.fillStyle = skyGlow;
-            ctx.fillRect(0, 0, canvas.width, horizonY);
-
-            // Draw Perspective Grid Lines
-            ctx.strokeStyle = '#32105c';
-            ctx.lineWidth = 2;
-            const trackEdges = [-2.25, -0.75, 0.75, 2.25];
-            
-            trackEdges.forEach(edgeX => {
-                const near = project3D(edgeX - playerX, 30);
-                const far = project3D(edgeX - playerX, 600);
-                ctx.beginPath();
-                ctx.moveTo(near.x, near.y);
-                ctx.lineTo(far.x, far.y);
-                ctx.stroke();
+            // Keyboard Hook
+            window.addEventListener('keydown', e => {
+                if (!gameActive) return;
+                if (e.key.toLowerCase() === 'a' || e.key === 'ArrowLeft') {
+                    if (currentLane > 0) currentLane--;
+                }
+                if (e.key.toLowerCase() === 'd' || e.key === 'ArrowRight') {
+                    if (currentLane < 2) currentLane++;
+                }
+                targetX = LANES[currentLane];
             });
 
-            // Update & Render Moving Horizontal Grid Stripes
-            ctx.strokeStyle = '#220a42';
-            ctx.lineWidth = 1;
-            for (let i = 0; i < horizonLines.length; i++) {
-                horizonLines[i] -= gameSpeed;
-                if (horizonLines[i] <= 20) {
-                    horizonLines[i] = 600; // Reset back to distance depth limit
+            // Touch/Pointer Hook
+            window.addEventListener('pointerdown', e => {
+                if (!gameActive || e.target.tagName === 'BUTTON') return;
+                if (e.clientX < window.innerWidth / 2) {
+                    if (currentLane > 0) currentLane--;
+                } else {
+                    if (currentLane < 2) currentLane++;
                 }
-                const nearLeft = project3D(-2.25 - playerX, horizonLines[i]);
-                const nearRight = project3D(2.25 - playerX, horizonLines[i]);
-                ctx.beginPath();
-                ctx.moveTo(nearLeft.x, nearLeft.y);
-                ctx.lineTo(nearRight.x, nearRight.y);
-                ctx.stroke();
+                targetX = LANES[currentLane];
+            });
+
+            document.getElementById('start-btn').addEventListener('click', bootGame);
+            document.getElementById('retry-btn').addEventListener('click', bootGame);
+
+            function bootGame(e) {
+                if(e) e.stopPropagation();
+                
+                document.getElementById('menu-overlay').classList.add('hidden');
+                document.getElementById('gameover-overlay').style.display = 'none';
+                document.getElementById('hud-overlay').style.display = 'flex';
+
+                currentLane = 1;
+                targetX = LANES[currentLane];
+                playerX = LANES[currentLane];
+                obstacles = [];
+                score = 0;
+                gameSpeed = 8;
+                speedMultiplier = 1;
+                spawnTimer = 0;
+                
+                horizonLines = [];
+                for (let i = 0; i < 15; i++) {
+                    horizonLines.push(i * 40);
+                }
+
+                gameActive = true;
+                updateHUD();
+                requestAnimationFrame(renderLoop);
             }
 
-            // Spawner Logic
-            spawnTimer -= gameSpeed;
-            if (spawnTimer <= 0) {
-                // Pick a lane, randomly place a solid variable block
-                const randomLaneIndex = Math.floor(Math.random() * 3);
-                obstacles.push({
-                    laneX: LANES[randomLaneIndex],
-                    z: 600, // Spawn far away
-                    width: 1.0,
-                    height: 60
-                });
-                spawnTimer = 120 + Math.random() * 100; // Intervals
-            }
-
-            // Draw & Process Obstacle Array
-            for (let i = obstacles.length - 1; i >= 0; i--) {
-                let obs = obstacles[i];
-                obs.z -= gameSpeed;
-
-                // Delete items past the camera view bounds
-                if (obs.z <= 15) {
-                    obstacles.splice(i, 1);
-                    continue;
-                }
-
-                // Map 3D projection layers for boxes
-                let basePoints = project3D(obs.laneX - playerX, obs.z, 0);
-                let topPoints = project3D(obs.laneX - playerX, obs.z, obs.height);
-
-                let boxW = obs.width * 110 * basePoints.size;
-                let boxH = basePoints.y - topPoints.y;
-
-                // Hit Detection Calculations
-                if (obs.z > 20 && obs.z < 45) {
-                    // Check if current active runner lane matches object assignment
-                    if (Math.abs(playerX - obs.laneX) < 0.4) {
-                        endRunSequence();
-                        return;
-                    }
-                }
-
-                // Render Object Profiles with Distance Clipping
-                if (basePoints.y > horizonY) {
-                    ctx.save();
-                    ctx.shadowBlur = 20;
-                    ctx.shadowColor = '#ff0055';
-                    ctx.fillStyle = '#ff0055';
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = Math.max(1, basePoints.size * 0.5);
-
-                    // Front Face box plotting
-                    ctx.fillRect(basePoints.x - boxW / 2, topPoints.y, boxW, boxH);
-                    ctx.strokeRect(basePoints.x - boxW / 2, topPoints.y, boxW, boxH);
-                    ctx.restore();
-                }
-            }
-
-            // Render Player Avatar (Faux 3D Vector Triangle at base screen)
-            const pBaseY = canvas.height * 0.88;
-            const pBaseX = canvas.width / 2;
-
-            ctx.save();
-            ctx.shadowBlur = 25;
-            ctx.shadowColor = var(--neon-blue);
-            ctx.fillStyle = var(--neon-blue);
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 3;
-
-            ctx.beginPath();
-            ctx.moveTo(pBaseX, pBaseY - 25); // Nose Cone Point
-            ctx.lineTo(pBaseX - 20, pBaseY + 20); // Tail Wing Left
-            ctx.lineTo(pBaseX + 20, pBaseY + 20); // Tail Wing Right
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
-        }
-
-        function endRunSequence() {
-            gameActive = false;
-            document.getElementById('hud-overlay').style.display = 'none';
-            document.getElementById('summary-metrics').textContent = `Core overloaded. Final distance evaluation score: ${Math.floor(score)}.`;
-            document.getElementById('gameover-overlay').style.display = 'flex';
-        }
-    </script>
-</body>
-</html>
+            function updateHUD() {
+                document.getElementById('score-idx').textContent = Math.floor(score);
+                document.getElementById('speed-idx
