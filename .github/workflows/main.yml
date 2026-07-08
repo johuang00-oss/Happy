@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>RUNNER.EXE</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050508;
+            font-family: monospace;
+            color: #d1d1d6;
+        }
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .interface {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: #050508;
+            text-align: center;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 2rem;
+            letter-spacing: 4px;
+            color: #ff3b30;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .meta-text {
+            font-size: 0.85rem;
+            color: #8e8e93;
+            max-width: 400px;
+            line-height: 1.6;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .trigger-btn {
+            background: #050508;
+            color: #ff3b30;
+            border: 2px solid #ff3b30;
+            padding: 14px 40px;
+            font-family: monospace;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        #hud {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            right: 25px;
+            display: none;
+            justify-content: space-between;
+            z-index: 5;
+            font-size: 1rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: #ff3b30;
+            pointer-events: none;
+        }
+        .hud-item span {
+            color: #ffffff;
+        }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div id="boot-screen" class="interface">
+        <h1>RUNNER_CORE_V2</h1>
+        <p class="meta-text">Tap or press spacebar to jump. Avoid solid barrier columns. Speed variables increase infinitely.</p>
+        <button class="trigger-btn" id="init-btn">INITIALIZE</button>
+    </div>
+
+    <div id="death-screen" class="interface" style="display: none;">
+        <h1>CORE_TERMINATED</h1>
+        <p class="meta-text" id="final-metrics">Reading logs...</p>
+        <button class="trigger-btn" id="reboot-btn">REBOOT</button>
+    </div>
+
+    <div id="hud">
+        <div class="hud-item">METERS: <span id="ui-score">00000</span></div>
+        <div class="hud-item">RATE: <span id="ui-speed">1.0X</span></div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+
+            let active = false;
+            let score = 0;
+            let speed = 6;
+            let gravity = 0.6;
+            
+            // Fixed Player Object Variables
+            const player = {
+                x: 0,
+                y: 0,
+                width: 30,
+                height: 30,
+                vy: 0,
+                jumpForce: -12,
+                isGrounded: false
+            };
+
+            let floorY = 0;
+            let obstacles = [];
+            let spawnCooldown = 0;
+
+            function syncSize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                floorY = canvas.height * 0.75;
+                if (!active) {
+                    player.x = canvas.width * 0.15;
+                    player.y = floorY - player.height;
+                }
+            }
+            window.addEventListener('resize', syncSize);
+            syncSize();
+
+            // Universal Trigger Hooks
+            window.addEventListener('keydown', e => {
+                if (e.key === ' ' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') {
+                    triggerJump();
+                }
+            });
+            window.addEventListener('pointerdown', e => {
+                if (e.target.tagName !== 'BUTTON') {
+                    triggerJump();
+                }
+            });
+
+            document.getElementById('init-btn').addEventListener('click', bootSequence);
+            document.getElementById('reboot-btn').addEventListener('click', bootSequence);
+
+            function triggerJump() {
+                if (active && player.isGrounded) {
+                    player.vy = player.jumpForce;
+                    player.isGrounded = false;
+                }
+            }
+
+            function bootSequence(e) {
+                e.stopPropagation();
+                document.getElementById('boot-screen').classList.add('hidden');
+                document.getElementById('death-screen').style.display = 'none';
+                document.getElementById('hud').style.display = 'flex';
+
+                player.y = floorY - player.height;
+                player.vy = 0;
+                player.isGrounded = true;
+                
+                obstacles = [];
+                score = 0;
+                speed = 6.5;
+                spawnCooldown = 0;
+
+                active = true;
+                requestAnimationFrame(cycle);
+            }
+
+            function cycle() {
+                if (!active) return;
+                requestAnimationFrame(cycle);
+
+                // Increment Tracking Values
+                score += 0.1;
+                speed += 0.0015;
+
+                document.getElementById('ui-score').textContent = String(Math.floor(score)).padStart(5, '0');
+                document.getElementById('ui-speed').textContent = (speed / 6.5).toFixed(1) + "X";
+
+                // Frame Reset
+                ctx.fillStyle = '#050508';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Draw Core Ground Boundary
+                ctx.strokeStyle = '#1c1c1e';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, floorY);
+                ctx.lineTo(canvas.width, floorY);
+                ctx.stroke();
+
+                // Physics Translation
+                player.vy += gravity;
+                player.y += player.vy;
+
+                if (player.y >= floorY - player.height) {
+                    player.y = floorY - player.height;
+                    player.vy = 0;
+                    player.isGrounded = true;
+                }
+
+                // Draw Player Node
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+
+                // Pipeline Hazard Controller
+                spawnCooldown -= speed;
+                if (spawnCooldown <= 0) {
+                    let h = 40 + Math.random() * 50;
+                    obstacles.push({
+                        x: canvas.width + 50,
+                        y: floorY - h,
+                        width: 24,
+                        height: h
+                    });
+                    spawnCooldown = 140 + Math.random() * 100;
+                }
+
+                // Process Hazard Layer Array
+                for (let i = obstacles.length - 1; i >= 0; i--) {
+                    let o = obstacles[i];
+                    o.x -= speed;
+
+                    if (o.x + o.width < 0) {
+                        obstacles.splice(i, 1);
+                        continue;
+                    }
+
+                    // Render Hazard Node
+                    ctx.fillStyle = '#ff3b30';
+                    ctx.fillRect(o.x, o.y, o.width, o.height);
+
+                    // AABB Flawless Collision Vector Check
+                    if (
+                        player.x < o.x + o.width &&
+                        player.x + player.width > o.x &&
+                        player.y < o.y + o.height &&
+                        player.y + player.height > o.y
+                    ) {
+                        terminate();
+                        return;
+                    }
+                }
+            }
+
+            function terminate() {
+                active = false;
+                document.getElementById('hud').style.display = 'none';
+                document.getElementById('final-metrics').textContent = `System integrity lost. Score: ${Math.floor(score)}.`;
+                document.getElementById('death-screen').style.display = 'flex';
+            }
+        };
+    </script>
+</body>
+</html>
